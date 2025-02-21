@@ -47,7 +47,7 @@ def make_env(scenario_name, num_agents=3, num_landmarks=3,num_obstacles = 5, lan
     #print('Create multiagent environment')
     if benchmark:
         env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,
-                            info_callback=scenario.benchmark_data, done_callback = scenario.done)
+                            info_callback=scenario.benchmark_data, done_callback = scenario.done)#  scenario.reward  这个是奖励机制入口，scenario也就是Tracking.py,直接执行reward函数，env获得reward
         # env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,
         #                     info_callback=scenario.benchmark_data, done_callback = scenario.done)
     else:

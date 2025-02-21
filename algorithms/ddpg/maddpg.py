@@ -13,9 +13,9 @@ class MADDPG:
     def __init__(self, num_agents = 3, num_landmarks = 1,num_obstacles = 5, landmark_depth=15., discount_factor=0.95, tau=0.02, lr_actor=1.0e-2, lr_critic=1.0e-2, weight_decay=1.0e-5, device = 'cpu', rnn = True, dim_1=64, dim_2=32):
         super(MADDPG, self).__init__()
 
-        # ([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + [entity_range] + [entity_depth] + [agent.state.p_pos_origin]) + action(for critic not actor)
+        # ([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + [entity_range] + [entity_depth]  + [agent.state.p_pos_origin]) + action(for critic not actor) + obstacle_pos + [obstacle_range] + [obstacle_depth]
         #增加障碍物后，输入长度发生改变，增加num_obstacle*2
-        in_actor = 1*2*2 + num_landmarks*2 + (num_agents-1)*2 + num_landmarks + 1*num_landmarks + 2*num_obstacles + 2 +1 #test with target depth and agent's origin for science
+        in_actor = 1*2*2 + num_landmarks*2 + (num_agents-1)*2 + num_landmarks + 1*num_landmarks + 2 +1  + 2*num_obstacles + num_obstacles + num_obstacles#test with target depth and agent's origin for science
 
         hidden_in_actor = dim_2
         hidden_out_actor = int(hidden_in_actor/2)

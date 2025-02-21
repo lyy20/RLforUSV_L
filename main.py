@@ -204,7 +204,7 @@ def main():
     # initialize policy and critic
     print('Initialize the Actor-Critic networks')
     if DNN == 'MADDPG':
-            maddpg =   MADDPG(num_agents = num_agents, num_landmarks = num_landmarks, landmark_depth=landmark_depth, discount_factor=GAMMA, tau=TAU, lr_actor=LR_ACTOR, lr_critic=LR_CRITIC, weight_decay=WEIGHT_DECAY, device = DEVICE, rnn = RNN, dim_1=DIM_1, dim_2=DIM_2)
+            maddpg =   MADDPG(num_agents = num_agents, num_landmarks = num_landmarks, landmark_depth=landmark_depth,num_obstacles=num_obstacles,  discount_factor=GAMMA, tau=TAU, lr_actor=LR_ACTOR, lr_critic=LR_CRITIC, weight_decay=WEIGHT_DECAY, device = DEVICE, rnn = RNN, dim_1=DIM_1, dim_2=DIM_2)
     elif DNN == 'MATD3':
             maddpg = MATD3_BC(num_agents = num_agents, num_landmarks = num_landmarks, landmark_depth=landmark_depth, discount_factor=GAMMA, tau=TAU, lr_actor=LR_ACTOR, lr_critic=LR_CRITIC, weight_decay=WEIGHT_DECAY, device = DEVICE, rnn = RNN, dim_1=DIM_1, dim_2=DIM_2)
     elif DNN == 'MASAC':
@@ -228,10 +228,12 @@ def main():
         agent_outofworld_episode = []
         agent_collision_episode = []
         landmark_collision_episode = []
+        obstacle_collision_episode = []
         for i in range(num_agents):
             agent_outofworld_episode.append([0]) #we initialize at 0
             agent_collision_episode.append([0]) #we initialize at 0
             landmark_collision_episode.append([0]) #we initialize at 0
+            obstacle_collision_episode.append([0])
     
     if PRE_TRAINED == True:
         #Load the pretrained agent's weights
@@ -294,12 +296,15 @@ def main():
         #reload agent out of world
         with open(trained_checkpoint + r'_outworld_last.file', "rb") as f:
             agent_outofworld_episode = pickle.load(f)
-        #reload agent out of world
+        #reload agent collision
         with open(trained_checkpoint + r'_agentcoll_last.file', "rb") as f:
             agent_collision_episode = pickle.load(f)
-        #reload agent out of world
+        #reload landmark collision
         with open(trained_checkpoint + r'_landcoll_last.file', "rb") as f:
             landmark_collision_episode = pickle.load(f)
+        #增加障碍物碰撞记录文件
+        with open(trained_checkpoint + r'_obstaclecoll_last.file', "rb") as f:
+            obstacle_collision_episode = pickle.load(f)
 
         #update the batch_size
         print('batch_size_was=',BATCH_SIZE)
@@ -493,21 +498,25 @@ def main():
                 agent_outofworld = 0
                 landmark_collision = 0
                 agent_collision = 0
+                obstacle_collision = 0
                 for i, inf in enumerate(info):
-                    #info strucutre: (world.error,landmarks_real_p, self.agent_outofworld, self.landmark_collision, self.agent_collision)
+                    #info strucutre: (world.error,landmarks_real_p, self.agent_outofworld, self.landmark_collision, self.agent_collision) 需要增加一个obstacle_collision
                     agent_outofworld += inf['n'][ii][2]
                     landmark_collision += inf['n'][ii][3]
                     agent_collision += inf['n'][ii][4]
+                    obstacle_collision += inf['n'][ii][5]
                 #append it to the historical list
                 agent_outofworld_episode[ii].append(agent_outofworld)
                 landmark_collision_episode[ii].append(landmark_collision)
                 agent_collision_episode[ii].append(agent_collision)
+                obstacle_collision_episode[ii].append(obstacle_collision)
                 if len(agent_outofworld_episode[ii]) > COLLISION_OUTWORLD_WINDOWS:
                     agent_outofworld_episode[ii] = agent_outofworld_episode[ii][1:]
                     landmark_collision_episode[ii] = landmark_collision_episode[ii][1:]
                     agent_collision_episode[ii] = agent_collision_episode[ii][1:]
+                    obstacle_collision_episode[ii] = obstacle_collision_episode[ii][1:]
         # 每一千次刷新一次，平均奖励，平均错误
-        if episode % 1000 < parallel_envs or episode == number_of_episodes-1:
+        if episode % 100 < parallel_envs or episode == number_of_episodes-1: #原本是1000次进行一次分析，改为100用于看效果
             if (PRE_TRAINED == True and episode == PRE_TRAINED_EP):
                 #Don't save the first iteration of a pretrined network
                 pass
@@ -524,6 +533,7 @@ def main():
                         logger.add_scalar('agent%i/agent_outofworld_episode' % a_i, np.array(agent_outofworld_episode[a_i]).sum(), episode)
                         logger.add_scalar('agent%i/landmark_collision_episode' % a_i, np.array(landmark_collision_episode[a_i]).sum(), episode)
                         logger.add_scalar('agent%i/agent_collision_episode' % a_i, np.array(agent_collision_episode[a_i]).sum(), episode)
+                        logger.add_scalar('agent%i/obstacle_collision_episode' % a_i, np.array(obstacle_collision_episode[a_i]).sum(), episode)
                 if BENCHMARK:
                     for l_i, err in enumerate(landmark_error_episode):
                         # import pdb; pdb.set_trace()
@@ -618,6 +628,9 @@ def main():
             #reload agent collisions
             with open(os.path.join(model_dir, 'episode_agentcoll_last.file'), "wb") as f:
                 pickle.dump(agent_collision_episode, f)
+            #reload obstacle collisions
+            with open(os.path.join(model_dir, 'episode_obstaclecoll_last.file'), "wb") as f:
+                pickle.dump(obstacle_collision_episode, f)
             #reload landmark collisions
             with open(os.path.join(model_dir, 'episode_landcoll_last.file'), "wb") as f:
                 pickle.dump(landmark_collision_episode, f)
@@ -651,6 +664,9 @@ def main():
                 #reload agent collisions
                 with open(os.path.join(model_dir, 'episode_agentcoll_best.file'), "wb") as f:
                     pickle.dump(agent_collision_episode, f)
+                #reload obstacle collisions
+                with open(os.path.join(model_dir, 'episode_obstaclecoll_best.file'), "wb") as f:
+                    pickle.dump(obstacle_collision_episode, f)
                 #reload landmark collisions
                 with open(os.path.join(model_dir, 'episode_landcoll_best.file'), "wb") as f:
                     pickle.dump(landmark_collision_episode, f)

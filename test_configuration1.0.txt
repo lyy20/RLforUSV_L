@@ -30,7 +30,7 @@ episode_length = 200
 #Amplitude of OU noise
 #This slowly decreases to 0
 #Was 2, try 0.5
-noise = 0.5 
+noise = 0.5
 noise_reduction = 0.9999
 
 #REWARD FUNCTION THRESHOLDS
@@ -41,7 +41,7 @@ rew_dis_th = 0.3
 EXP_REP_BUF = False
 
 #Uniform random steps at the begining as suggested by https://spinningup.openai.com/en/latest/algorithms/ddpg.html
-START_STEPS = 10000
+START_STEPS = 1000
 
 ##################################################################
 # PRETRINED NETWORK
@@ -58,15 +58,15 @@ PRE_TRAINED_EP = 0.5
 SCENARIO = tracking
 
 #Number of parallel environments
-parallel_envs = 4
+parallel_envs = 1
 #Number of agents per environment
 num_agents = 1
 #Number of landmarks (or targets) per environment
 num_landmarks = 1
 #Number of obstacles per environment
-num_obstacles = 5
+num_obstacles = 3
 #TARGET PARAMETERS
-landmark_movable = False
+landmark_movable = True
 movement = linear
 #movement = levy
 #movement = random
@@ -76,14 +76,14 @@ landmark_vel = 0.0006
 max_vel = 0.0006
 
 #Depth of each landmark (in metres). It will be a random depth between 15m and landmark_depth.
-landmark_depth = 300.0
+landmark_depth = 30.0
 
 #TARGET ESTIMATION METHOD (LS by default if not PF)
 pf_method = False
 
 #ENVIRONMENT PARAMETERS
 #range dropping (to simulate missing communications between agents and landmarks)
-range_dropping = 0.1
+range_dropping = 0.01
 #maximum range at a distance measurement can be conducted
 max_range = 0.9
 #sea current velocity (0.001 km/s is the velocity of the agent)

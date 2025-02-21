@@ -111,6 +111,7 @@ class World(object):
         self.landmarks = []
         self.obstacles = []
         self.landmarks_estimated = []
+        self.obstacles_estimated = []
         # communication channel dimensionality
         self.dim_c = 0
         # position dimensionality
@@ -128,6 +129,7 @@ class World(object):
         # if world is collaborative
         self.num_agents = 3
         self.num_landmarks = 3
+        self.num_obstacles = 5
         self.collaborative = True
         self.angle = []
         # sea currents
@@ -174,7 +176,7 @@ class World(object):
                 if entity.movable:
                     noise = np.random.randn(*entity.action.u.shape) * entity.u_noise if entity.u_noise else 0.0
                     p_force[i] = entity.action.u + noise 
-            if 'landmark' in entity.name:
+            if 'landmark' in entity.name or 'obstacle' in entity.name:
                 if entity.movable:
                     noise = np.random.randn(*entity.action.u.shape) * entity.u_noise if entity.u_noise else 0.0
                     p_force[i] = entity.action.u + noise 
@@ -201,8 +203,8 @@ class World(object):
             if not entity.movable: continue
             entity.state.p_vel = entity.state.p_vel * (1 - self.damping)
             
-            if 'landmark' in entity.name:
-                #if entity is a landmark (x-y force applyied independently)
+            if 'landmark' in entity.name or 'obstacle' in entity.name:
+                #if entity is a landmark / obstacle (x-y force applyied independently)
                 if (p_force[i] is not None):
                     entity.state.p_vel += (p_force[i] / entity.mass) * self.dt
                 if entity.max_speed is not None:
