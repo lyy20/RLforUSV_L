@@ -50,7 +50,7 @@ def main():
     if( len( sys.argv ) > 1 ):
         configFile = sys.argv[1]
     else:
-        configFile = 'test_configuration'
+        configFile = 'test_configuration1.0'
     print ('Configuration File   =  ',configFile +'.txt')
     
     config = ConfigParser()
@@ -90,6 +90,8 @@ def main():
     num_agents     = config.getint('hyperparam','num_agents')
     # number of landmarks (or targets) per environment
     num_landmarks  = config.getint('hyperparam','num_landmarks')
+    #障碍物的数量
+    num_obstacles = config.getint('hyperparam', 'num_obstacles')
     landmark_depth = config.getfloat('hyperparam','landmark_depth')
     landmark_movable = config.getboolean('hyperparam','landmark_movable')
     landmark_vel     = config.getfloat('hyperparam','landmark_vel')
@@ -129,7 +131,8 @@ def main():
     common_folder = r"/logs/"+configFile
     log_path = os.path.dirname(os.getcwd())+common_folder+r"/log"
     model_dir= os.path.dirname(os.getcwd())+common_folder+r"/model_dir"
-    
+    print(log_path)
+    print(model_dir)
     os.makedirs(model_dir, exist_ok=True)
     if PRE_TRAINED:
         PRE_TRAINED_EP = max([int(aux.split('_')[-1][:-3]) for i, aux in enumerate(glob.glob(model_dir+r'/episode_last_*.pt'))])
@@ -161,6 +164,7 @@ def main():
     print('parallel_envs        =  ',parallel_envs)
     print('num_agents           =  ',num_agents)
     print('num_landmarks        =  ',num_landmarks)
+    print('num_obstacles        =  ',num_obstacles)
     print('landmark_depth       =  ',landmark_depth)
     print('landmark_velocity    =  ',landmark_vel)
     print('number_of_episodes   =  ',number_of_episodes)
@@ -188,7 +192,7 @@ def main():
     print('Initialize the number of parallel envs in torch')
     torch.set_num_threads(parallel_envs)
     print('Initialize the environments')
-    env = envs.make_parallel_env(parallel_envs, SCENARIO, seed = SEED+PRE_TRAINED_EP, num_agents=num_agents, num_landmarks=num_landmarks, landmark_depth=landmark_depth, landmark_movable=landmark_movable, landmark_vel=landmark_vel, max_vel=max_vel, random_vel=random_vel, movement=movement, pf_method=pf_method, rew_err_th=rew_err_th, rew_dis_th=rew_dis_th, max_range=max_range, max_current_vel=max_current_vel,range_dropping=range_dropping, benchmark = BENCHMARK)
+    env = envs.make_parallel_env(parallel_envs, SCENARIO, seed = SEED+PRE_TRAINED_EP, num_agents=num_agents, num_landmarks=num_landmarks,num_obstacles=num_obstacles, landmark_depth=landmark_depth, landmark_movable=landmark_movable, landmark_vel=landmark_vel, max_vel=max_vel, random_vel=random_vel, movement=movement, pf_method=pf_method, rew_err_th=rew_err_th, rew_dis_th=rew_dis_th, max_range=max_range, max_current_vel=max_current_vel,range_dropping=range_dropping, benchmark = BENCHMARK)
     
     # initialize replay buffer
     if EXP_REP_BUF == False:
@@ -502,6 +506,7 @@ def main():
                     agent_outofworld_episode[ii] = agent_outofworld_episode[ii][1:]
                     landmark_collision_episode[ii] = landmark_collision_episode[ii][1:]
                     agent_collision_episode[ii] = agent_collision_episode[ii][1:]
+        # 每一千次刷新一次，平均奖励，平均错误
         if episode % 1000 < parallel_envs or episode == number_of_episodes-1:
             if (PRE_TRAINED == True and episode == PRE_TRAINED_EP):
                 #Don't save the first iteration of a pretrined network

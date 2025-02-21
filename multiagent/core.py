@@ -67,6 +67,19 @@ class Landmark(Entity):
         self.ra = 0.
         self.landmark_depth = 0.
 
+# properties of Obstacle entities,新增障碍物实体
+class Obstacle(Entity):
+     def __init__(self):
+        super(Obstacle, self).__init__()
+        # action
+        self.action = Action()
+        # physical motor noise amount
+        self.u_noise = None
+        # velocity,direction,depth
+        self.obstacle_vel = 0.
+        self.ra = 0.
+        self.obstacle_depth = 0.
+
 # properties of agent entities
 class Agent(Entity):
     def __init__(self):
@@ -96,6 +109,7 @@ class World(object):
         # list of agents and entities (can change at execution-time!)
         self.agents = []
         self.landmarks = []
+        self.obstacles = []
         self.landmarks_estimated = []
         # communication channel dimensionality
         self.dim_c = 0
@@ -123,7 +137,7 @@ class World(object):
     # return all entities in the world
     @property
     def entities(self):
-        return self.agents + self.landmarks
+        return self.agents + self.landmarks + self.obstacles
 
     # return all agents controllable by external policies
     @property
@@ -238,7 +252,7 @@ class World(object):
             return [None, None] # not a collider
         if (entity_a is entity_b):
             return [None, None] # don't collide against itself
-        # compute actual distance between entities
+        # compute actual distance between entities·
         delta_pos = entity_a.state.p_pos - entity_b.state.p_pos
         dist = np.sqrt(np.sum(np.square(delta_pos)))
         # minimum allowable distance

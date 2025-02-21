@@ -24,7 +24,7 @@ UPDATE_TIMES = 20
 #Seed for random numbers       
 SEED = 3 
 #Number of training episodes
-number_of_episodes = 2000000
+number_of_episodes = 100000
 episode_length = 200
 
 #Amplitude of OU noise
@@ -41,14 +41,14 @@ rew_dis_th = 0.3
 EXP_REP_BUF = False
 
 #Uniform random steps at the begining as suggested by https://spinningup.openai.com/en/latest/algorithms/ddpg.html
-START_STEPS = 10000 
+START_STEPS = 10000
 
 ##################################################################
 # PRETRINED NETWORK
 ##################################################################
 #Use a previously trained network as weights' imput    
-PRE_TRAINED = False   
-PRE_TRAINED_EP = 0
+PRE_TRAINED = False
+PRE_TRAINED_EP = 0.5
 
 
 ##################################################################
@@ -58,14 +58,15 @@ PRE_TRAINED_EP = 0
 SCENARIO = tracking
 
 #Number of parallel environments
-parallel_envs = 8
+parallel_envs = 4
 #Number of agents per environment
 num_agents = 1
 #Number of landmarks (or targets) per environment
 num_landmarks = 1
-
+#Number of obstacles per environment
+num_obstacles = 5
 #TARGET PARAMETERS
-landmark_movable = True
+landmark_movable = False
 movement = linear
 #movement = levy
 #movement = random
@@ -93,10 +94,10 @@ max_current_vel = 0.0003
 # NETWORK ARCHITECTURE
 ##################################################################
 #DNN network
-#DNN = MADDPG
+DNN = MADDPG
 #DNN = MATD3
 #DNN = MASAC
-DNN = MAHRSAC
+#DNN = MAHRSAC
 
 #SAC parameters
 ALPHA = 0.05

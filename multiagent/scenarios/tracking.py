@@ -1,5 +1,5 @@
 import numpy as np
-from multiagent.core import World, Agent, Landmark
+from multiagent.core import World, Agent, Landmark ,Obstacle
 from multiagent.scenario import BaseScenario
 from tracking.target_pf import Target
 from utilities.utilities import random_levy
@@ -7,7 +7,7 @@ from utilities.utilities import random_levy
 
 class Scenario(BaseScenario):
     
-    def make_world(self, num_agents=3, num_landmarks=3, landmark_depth=15., landmark_movable = False, landmark_vel=0.05, max_vel=0.2, random_vel=False, movement='linear', pf_method = False, rew_err_th=0.0003, rew_dis_th=0.3, max_range = 2., max_current_vel=0.,range_dropping = 0.2):
+    def make_world(self, num_agents=3, num_landmarks=3,num_obstacles=5, landmark_depth=15., landmark_movable = False, landmark_vel=0.05, max_vel=0.2, random_vel=False, movement='linear', pf_method = False, rew_err_th=0.0003, rew_dis_th=0.3, max_range = 2., max_current_vel=0.,range_dropping = 0.2):
         world = World()
         # set any world properties first
         world.dim_c = 2
@@ -34,7 +34,13 @@ class Scenario(BaseScenario):
                 landmark.collide = False
                 landmark.movable = False
                 landmark.size = 0.002
-                
+        # 创建障碍物
+        world.obstacles = [Obstacle() for i in range(num_obstacles)] #暂时定障碍物为五个，稍后修改参数
+        for i, obstacle in enumerate(world.obstacles):
+            obstacle.name = 'obstacle %d' % i
+            obstacle.collide = False
+            obstacle.movable = False
+            obstacle.size = np.random.uniform(0.05 , 0.1)
         # make initial conditions
         world.cov = np.ones(num_landmarks)/30.
         world.error = np.ones(num_landmarks)
@@ -87,6 +93,9 @@ class Scenario(BaseScenario):
                 landmark.color = np.array([0.25, 0.25, 0.25])
             else:
                 landmark.color = np.array([0.55, 0.0, 0.0])
+        # 属性给障碍物
+        for i, obstacle in enumerate(world.obstacles):
+            obstacle.color = np.array([0.35, 0.85, 0.35])
         # set random initial states
         for agent in world.agents:
             agent.state.p_pos = np.random.uniform(-1., 1., world.dim_p)
@@ -104,6 +113,17 @@ class Scenario(BaseScenario):
             else:
                 landmark.state.p_pos = world.agents[0].state.p_pos
                 landmark.state.p_vel = np.zeros(world.dim_p)
+        #障碍物随机定位，假设只有一个目标点，将障碍物布置在目标点附近
+        target_landmark = world.landmarks[0]
+        obstacle_radius = 0.4
+        for obstacle in world.obstacles:
+            # 在场地中随机生成位置
+            O_pos = np.random.uniform(-1., 1., world.dim_p)  # 假设场地范围是[-1, 1]
+            # 检查是否覆盖目标点
+            while np.linalg.norm(O_pos - target_landmark.state.p_pos) <= obstacle.size:
+                O_pos = np.random.uniform(-1., 1., world.dim_p)  # 假设场地范围是[-1, 1]
+            obstacle.state.p_pos = O_pos
+            obstacle.state.p_vel = np.zeros(world.dim_p)
         #Initailize the landmark estimated positions
         world.landmarks_estimated = [Target() for i in range(world.num_landmarks)]
         
@@ -204,6 +224,12 @@ class Scenario(BaseScenario):
                     rew -= 10.
                     self.agent_collision += 1
                     done_state = True
+
+        for obstacle in world.obstacles:
+            dist_to_obstacle = np.sqrt(np.sum(np.square(agent.state.p_pos - obstacle.state.p_pos)))
+            if dist_to_obstacle < (obstacle.size + agent.size):  # 如果与障碍物距离过近
+                done_state = True
+                rew -= 5.0  # 给予惩罚
         return rew
 
     def observation(self, agent, world):
@@ -310,8 +336,12 @@ class Scenario(BaseScenario):
             if other is agent: continue
             comm.append(other.state.c)
             other_pos.append(other.state.p_pos - agent.state.p_pos)
+        #增加障碍物观测位置值 （将会更改网络的输入，大工程！）
+        obstacle_pos = []
+        for obstacle in world.obstacles:
+            obstacle_pos.append(obstacle.state.p_pos - agent.state.p_pos)
 
-        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + [entity_range] + [entity_depth] + [agent.state.p_pos_origin])
+        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + [entity_range] + [entity_depth] + [agent.state.p_pos_origin] + obstacle_pos)
     
     
     def done(self, agent, world):

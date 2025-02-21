@@ -271,8 +271,11 @@ class MultiAgentEnv(gym.Env):
                     geom.set_color(*entity.color, alpha=0.8)
                 elif 'landmark_estimation' in entity.name:
                     geom.set_color(*entity.color, alpha=0.8)
+                elif 'landmark' in entity.name:
+                    geom.set_color(*entity.color, alpha=0.8)
                 else:
-                    geom.set_color(*entity.color, alpha = 0.8)
+                    # print("渲染剩余实体")
+                    geom.set_color(*entity.color, alpha=0.8)
                 geom.add_attr(xform)
                 self.render_geoms.append(geom)
                 self.render_geoms_xform.append(xform)
