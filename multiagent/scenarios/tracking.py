@@ -23,20 +23,21 @@ class Scenario(BaseScenario):
             agent.silent = True
             agent.size = 0.04
             agent.max_a_speed = 3.1415
-        # add landmarks
+        # add landmarks 预测地标需要大于本体
         world.landmarks = [Landmark() for i in range(num_landmarks*2)]
         for i, landmark in enumerate(world.landmarks):
             if i < num_landmarks:
                 landmark.name = 'landmark %d' % i
                 landmark.collide = False
                 landmark.movable = landmark_movable
+                landmark.size = 0.04
             else:
                 landmark.name = 'landmark_estimation %d' % (i-num_landmarks)
                 landmark.collide = False
                 landmark.movable = False
-                landmark.size = 0.002
+                landmark.size = world.landmarks[i-num_landmarks].size + 0.01
         # 创建障碍物
-        # 翻倍障碍物，为了估计观测
+        # 翻倍障碍物，为了估计观测,且障碍物预测体需要大于本体
         world.obstacles = [Obstacle() for i in range(num_obstacles*2)]
         for i, obstacle in enumerate(world.obstacles):
             if i < num_obstacles:
@@ -48,7 +49,7 @@ class Scenario(BaseScenario):
                 obstacle.name = 'obstacle_estimation %d' % (i-num_obstacles)
                 obstacle.collide = False
                 obstacle.movable = False
-                obstacle.size = world.obstacles[i-num_obstacles].size - 0.02
+                obstacle.size = world.obstacles[i-num_obstacles].size + 0.02
 
         # make initial conditions
         world.cov = np.ones(num_landmarks)/30.
@@ -169,7 +170,6 @@ class Scenario(BaseScenario):
         #take a random direction
         for landmark in world.landmarks:
             landmark.ra = (np.random.rand(1)*np.pi*2.).item(0) #initial landmark direction
-
             #take a random target depth
             landmark.landmark_depth = float(round(np.random.rand(1).item(0)*self.max_landmark_depth))
             if landmark.landmark_depth<15.:
@@ -235,8 +235,8 @@ class Scenario(BaseScenario):
         
         dists = [np.sqrt(np.sum(np.square(agent.state.p_pos - l.state.p_pos))) for l in world.landmarks[:-world.num_landmarks]]
         
-                
-        if min(dists) > self.set_max_range: #agent out of range 智能体与目标地标要是距离超过了范围，则会惩罚
+
+        if min(dists) > self.set_max_range: #agent out of range 智能体与观测地标要是距离超过了范围，则会惩罚
             dist_from_origin = np.sqrt(np.sum(np.square(agent.state.p_pos - agent.state.p_pos_origin))) #计算智能体目前与源点的距离
             if dist_from_origin > self.set_max_range*2. : #agent outside the world 与源点距离相差两倍的最大范围，则判断智能体逃离世界，惩罚
                 rew -= 100
@@ -244,7 +244,7 @@ class Scenario(BaseScenario):
                 self.agent_outofworld += 1
             else:
                 rew -= 0.1
-        else:
+        else: #代表智能体暂时未脱离合理搜寻范围，所以将当前位置设为源点位置
             # the agent is close to the target, and therefore, we save its position as new origin.
             agent.state.p_pos_origin = agent.state.p_pos.copy()
             
@@ -261,7 +261,7 @@ class Scenario(BaseScenario):
                     self.agent_collision += 1
                     done_state = True
 
-        for i,obstacle in enumerate(world.obstacles): #暂时不加与估计位置的奖惩机制 （等测试完其他功能）
+        for i,obstacle in enumerate(world.obstacles[:-world.num_obstacles]): #暂时不加与估计位置的奖惩机制 （等测试完其他功能）
             if i < world.num_obstacles:
                 dist_to_obstacle = np.sqrt(np.sum(np.square(agent.state.p_pos - obstacle.state.p_pos)))
                 if dist_to_obstacle < (obstacle.size + agent.size):  # 如果与障碍物距离过近
@@ -282,7 +282,7 @@ class Scenario(BaseScenario):
                 #Update the landmarks_estiamted position using Particle Fileter
                 #1:Compute radius between the agent and each landmark
                 slant_range = np.sqrt(((entity.state.p_pos - agent.state.p_pos)[0])**2+((entity.state.p_pos - agent.state.p_pos)[1])**2)
-                target_depth = entity.landmark_depth/1000. #normalize the target depth
+                target_depth = entity.landmark_depth/1000. #normalize the target depth ###修改一下，把地标深度改为0，因为最小二乘法里面并没有对深度进行模拟  #  尝试完毕，效果不明显
                 slant_range = np.sqrt(slant_range**2+target_depth**2) #add target depth to the range measurement
                 # Add some systematic error in the measured range
                 slant_range *= 1.01 # where 0.99 = 1% of sound speed difference = 1495 m/s
@@ -297,31 +297,38 @@ class Scenario(BaseScenario):
                     new_range = False
                 else:
                     new_range = True
-                
+                ##增加一段使用卡尔曼滤波估计的代码段
+                # 将地标真实值输入进函数，函数会对其进行观测矩阵转换。
+                world.landmarks_estimated[i].updateKM(dt=1.0, new_range=new_range, z=slant_range,
+                                                      L_info=[world.landmarks[i].state.p_pos[0],world.landmarks[i].state.p_pos[1],world.landmarks[i].landmark_vel,world.landmarks[i].ra])  ##尝试更改步长，有一定效果但不明显
+
+
+
                 #2:Update the PF
-                add_pos_error = False
-                if self.pf_method == True:
-                    if add_pos_error == True:
-                        world.landmarks_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0]+np.random.randn(1).item(0)*3/1000.,0.,agent.state.p_pos[1]+np.random.randn(1).item(0)*3/1000.,0.], update=new_range)
-                    else:
-                        world.landmarks_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0],0.,agent.state.p_pos[1],0.], update=new_range)
-                else:
-                    #2b: Update the LS
-                    if add_pos_error == True:
-                        #平滑处理
-                        smoothed_myobserver = self.smooth_data(
-                            [agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
-                             agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.])
-                        world.landmarks_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range,
-                                                              myobserver=smoothed_myobserver)
-                        #world.landmarks_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0]+np.random.randn(1).item(0)*3/1000.,0.,agent.state.p_pos[1]+np.random.randn(1).item(0)*3/1000.,0.])
-                    else:
-                        #平滑处理
-                        smoothed_myobserver = self.smooth_data([agent.state.p_pos[0], 0., agent.state.p_pos[1], 0.])
-                        world.landmarks_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range,
-                                                              myobserver=smoothed_myobserver)
-                        #world.landmarks_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0],0.,agent.state.p_pos[1],0.])
-                # Traditional plot
+                # add_pos_error = False
+                # if self.pf_method == True:
+                #     if add_pos_error == True:
+                #         world.landmarks_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0]+np.random.randn(1).item(0)*3/1000.,0.,agent.state.p_pos[1]+np.random.randn(1).item(0)*3/1000.,0.], update=new_range)
+                #     else:
+                #         world.landmarks_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0],0.,agent.state.p_pos[1],0.], update=new_range)
+                # else:
+                #     #2b: Update the LS
+                #     if add_pos_error == True:
+                #         #平滑处理
+                #         # smoothed_myobserver = self.smooth_data(
+                #         #     [agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
+                #         #      agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.])
+                #         # world.landmarks_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range,
+                #         #                                       myobserver=smoothed_myobserver)
+                #
+                #         world.landmarks_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0]+np.random.randn(1).item(0)*3/1000.,0.,agent.state.p_pos[1]+np.random.randn(1).item(0)*3/1000.,0.])
+                #     else:
+                #         #平滑处理
+                #         # smoothed_myobserver = self.smooth_data([agent.state.p_pos[0], 0., agent.state.p_pos[1], 0.])
+                #         # world.landmarks_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range,
+                #         #                                       myobserver=smoothed_myobserver)
+                #         world.landmarks_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range, myobserver=[agent.state.p_pos[0],0.,agent.state.p_pos[1],0.],L_pos = world.landmarks[i].state.p_pos) ##尝试更改步长，有一定效果但不明显
+                # # Traditional plot
                 # import matplotlib.pyplot as plt
                 # plt.figure(figsize=(5,5))
                 # plt.plot(world.landmarks_estimated[i].pf._x[0],world.landmarks_estimated[i].pf._x[2], 'r^', ms=20)
@@ -336,16 +343,16 @@ class Scenario(BaseScenario):
                     if self.pf_method == True:
                         world.landmarks[i+world.num_landmarks].state.p_pos = [world.landmarks_estimated[i].pfxs[0],world.landmarks_estimated[i].pfxs[2]] #Using PF
                     else:
-                        world.landmarks[i+world.num_landmarks].state.p_pos = [world.landmarks_estimated[i].lsxs[-1][0],world.landmarks_estimated[i].lsxs[-1][2]] #Using LS
+                        world.landmarks[i+world.num_landmarks].state.p_pos = [world.landmarks_estimated[i].lsxs[-1][0],world.landmarks_estimated[i].lsxs[-1][2]] #Using LS  #将最后最小二乘法LS计算的估计地表坐标录入  预测地标实体内
                 except:
                     #An error will be produced if its the initial time and no good range measurement has been conducted yet. In this case, we supose that the target 
                     #is at the same position of the agent.
-                    world.landmarks[i+world.num_landmarks].state.p_pos = agent.state.p_pos.copy()
+                    world.landmarks[i+world.num_landmarks].state.p_pos = world.landmarks[i].state.p_pos.copy() #原本是Agent位置，解释是说在初期没有进行良好的距离判断，所以无法得知地标位置，但暂时现在不考虑这个问题，假设地标探测一直良好，所以把agent改为对应的地标landmark(效果变好了一点)
                 #Append the position of the landmark to generate the observation state
                 #Using the true landmark position
                 # entity_pos.append(entity.state.p_pos - agent.state.p_pos)
                 #Using the estimated landmark position
-                entity_pos.append(world.landmarks[i+world.num_landmarks].state.p_pos - agent.state.p_pos)
+                entity_pos.append(world.landmarks[i+world.num_landmarks].state.p_pos - agent.state.p_pos) #将地标差录入  输入  中
                 #Using the estimated landmark position but without delating the agent position. so it has a global position.
                 # entity_pos.append(world.landmarks[i+world.num_landmarks].state.p_pos)
                 entity_range.append(slant_range)
@@ -410,28 +417,33 @@ class Scenario(BaseScenario):
                     new_range = False
                 else:
                     new_range = True
+                world.obstacles_estimated[i].updateKM(dt=1.0, new_range=new_range, z=slant_range,
+                                                      L_info=[world.obstacles[i].state.p_pos[0],
+                                                              world.obstacles[i].state.p_pos[1],
+                                                              world.obstacles[i].obstacle_vel,
+                                                              world.obstacles[i].ra])  ##尝试更改步长，有一定效果但不明显
 
                 # 2:Update the PF
-                add_pos_error = False
-                if self.pf_method:
-                    if add_pos_error:
-                        world.obstacles_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[
-                            agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
-                            agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.], update=new_range)
-                    else:
-                        world.obstacles_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range,
-                                                              myobserver=[agent.state.p_pos[0], 0.,
-                                                                          agent.state.p_pos[1], 0.], update=new_range)
-                else:
-                    # 2b: Update the LS
-                    if add_pos_error:
-                        world.obstacles_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range, myobserver=[
-                            agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
-                            agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.])
-                    else:
-                        world.obstacles_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range,
-                                                              myobserver=[agent.state.p_pos[0], 0.,
-                                                                          agent.state.p_pos[1], 0.])
+                # add_pos_error = False
+                # if self.pf_method:
+                #     if add_pos_error:
+                #         world.obstacles_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range, myobserver=[
+                #             agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
+                #             agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.], update=new_range)
+                #     else:
+                #         world.obstacles_estimated[i].updatePF(dt=30., new_range=new_range, z=slant_range,
+                #                                               myobserver=[agent.state.p_pos[0], 0.,
+                #                                                           agent.state.p_pos[1], 0.], update=new_range)
+                # else:
+                #     # 2b: Update the LS
+                #     if add_pos_error:
+                #         world.obstacles_estimated[i].updateLS(dt=0.04, new_range=new_range, z=slant_range, myobserver=[
+                #             agent.state.p_pos[0] + np.random.randn(1).item(0) * 3 / 1000., 0.,
+                #             agent.state.p_pos[1] + np.random.randn(1).item(0) * 3 / 1000., 0.])
+                #     else:
+                #         world.obstacles_estimated[i].updateLS(dt=30., new_range=new_range, z=slant_range,
+                #                                               myobserver=[agent.state.p_pos[0], 0.,
+                #                                                           agent.state.p_pos[1], 0.],L_pos=world.obstacles[i].state.p_pos)
                 # Traditional plot
                 # import matplotlib.pyplot as plt
                 # plt.figure(figsize=(5,5))
@@ -454,8 +466,8 @@ class Scenario(BaseScenario):
                             world.obstacles_estimated[i].lsxs[-1][2]]  # Using LS
                 except:
                     # An error will be produced if its the initial time and no good range measurement has been conducted yet. In this case, we supose that the target
-                    # is at the same position of the agent.
-                    world.obstacles[i + world.num_obstacles].state.p_pos = agent.state.p_pos.copy()
+                    # is at the same position of the agent.  #等同于让智能体在这个步长内不受错误的影响，因为观测值被设定在自身位置 # 已经更改为真实障碍物位置，效果更好
+                    world.obstacles[i + world.num_obstacles].state.p_pos = world.obstacles[i].state.p_pos.copy()
                 # Append the position of the landmark to generate the observation state
                 # Using the true landmark position
                 # entity_pos.append(entity.state.p_pos - agent.state.p_pos)

@@ -232,7 +232,7 @@ class MultiAgentEnv(gym.Env):
         if mode == 'human':
             alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
             message = ''
-            for agent in self.world.agents:
+            for agent in self.world.agents: #单智能体时，无效
                 comm = []
                 for other in self.world.agents:
                     if other is agent: continue
@@ -249,7 +249,7 @@ class MultiAgentEnv(gym.Env):
                 # import rendering only if we need it (and don't import for headless machines)
                 #from gym.envs.classic_control import rendering
                 from multiagent import rendering
-                self.viewers[i] = rendering.Viewer(700,700)
+                self.viewers[i] = rendering.Viewer(1000,1000)
 
         # create rendering geometry
         if self.render_geoms is None or CONTINUE_PLOT == True:
@@ -269,6 +269,13 @@ class MultiAgentEnv(gym.Env):
                 xform = rendering.Transform()
                 if 'agent' in entity.name:
                     geom.set_color(*entity.color, alpha=0.8)
+                    # if old_entity == 0: ##增加显示路线
+                    #     line = rendering.Line(start=entity.state.p_pos,end=entity.state.p_pos)
+                    # else:
+                    #     line = rendering.Line(start=old_entity.state.p_pos,end=entity.state.p_pos)
+                    # line.set_color(1, 0, 0,alpha= 1)
+                    # self.render_geoms.append(line)
+                    # old_entity = entity
                 elif 'landmark_estimation' in entity.name:
                     geom.set_color(*entity.color, alpha=0.8)
                 elif 'landmark' in entity.name:
@@ -282,16 +289,17 @@ class MultiAgentEnv(gym.Env):
                 
                 #TODO I'm trying to plot a line using render
                 # if 'agent' in entity.name:
-                #     print('old_entity =',old_entity)
+                #     #print('old_entity =',old_entity)
                 #     if old_entity == 0:
                 #         line = rendering.Line(start=entity.state.p_pos,end=entity.state.p_pos)
                 #     else:
                 #         line = rendering.Line(start=old_entity.state.p_pos,end=entity.state.p_pos)
+                #     line.set_color(1, 0, 0,alpha= 1)
                 #     self.render_geoms.append(line)
                 #     old_entity = entity
             
-            if CONTINUE_PLOT == True and len(self.render_geoms)> 10*len(self.world.entities):
-                self.render_geoms = self.render_geoms[len(self.world.entities):]
+            if CONTINUE_PLOT == True and len(self.render_geoms)> 10*(len(self.world.entities)): #代表可视化中最多同时存在十倍的实体总数，并且前面代码表示，每前进一步，原先的实体都会变淡  #加一为了把路线显示出来
+                self.render_geoms = self.render_geoms[(len(self.world.entities)):]
 
             # add geoms to viewer
             for viewer in self.viewers:
@@ -303,7 +311,7 @@ class MultiAgentEnv(gym.Env):
         for i in range(len(self.viewers)):
             from multiagent import rendering
             # update bounds to center around agent
-            cam_range = 1
+            cam_range = 3
             if self.shared_viewer:
                 pos = np.zeros(self.world.dim_p)
             else:

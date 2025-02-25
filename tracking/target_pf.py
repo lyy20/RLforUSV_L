@@ -11,7 +11,6 @@ import numpy as np
 import random
 import time
 import sys
-
 SOUND_SPEED = 1500.
 
 #############################################################
@@ -463,11 +462,15 @@ class Target(object):
         self.pfxs = [0.,0.,0.,0.]
         
         #############LS initialization###########################################################################
-        self.lsxs=[]
-        self.eastingpoints_LS=[]
-        self.northingpoints_LS=[]
-        self.Plsu=np.array([])
-        self.allz=[]
+        self.ture_P = [] #存储每次的真实地标
+        self.observations = [] #所有的观测位置记录
+        self.P = np.eye(4) * 100 # 用于卡尔曼滤波的协方差矩阵
+        self.lsxs=[]  #所有的估计的位置，与Plsu配合可以计算速度与方位
+        self.point = [] #所有的观测信息，包括  位置（2维） + 距离 （在奇异值分解里面用到）
+        self.eastingpoints_LS=[] # x 轴
+        self.northingpoints_LS=[] # y 轴
+        self.Plsu=np.array([]) # 当前所估计的位置！！！
+        self.allz=[]  #储存 智能体与地标距离
     
     #############################################################################################
     ####            Particle Filter Algorithm  (PF)                                             ##         
@@ -503,35 +506,36 @@ class Target(object):
     #############################################################################################
     ####             Least Squares Algorithm  (LS)                                             ##         
     #############################################################################################
-    def updateLS(self,dt,new_range,z,myobserver):
+    def updateLS(self,dt,new_range,z,myobserver,L_pos): #myobserver所代表的agent的位置  改为  对应真实地表位置，令其作为在观测失效时的默认地标   （等待效果）
         num_ls_points_used = 30
+        #下述注释为原代码中的最小二乘法的处理过程，更改后用奇异值分解进行了改良
         #Propagate current target state estimate
-        if new_range == True:
-            self.allz.append(z)
-            self.eastingpoints_LS.append(myobserver[0])
-            self.northingpoints_LS.append(myobserver[2])
-        numpoints = len(self.eastingpoints_LS)
-        if numpoints > 3:
-            #Unconstrained Least Squares (LS-U) algorithm 2D
-            #/P_LS-U = N0* = N(A^T A)^-1 A^T b
-            #where:
-            P=np.matrix([self.eastingpoints_LS[-num_ls_points_used:],self.northingpoints_LS[-num_ls_points_used:]])
-            # N is:
-            N = np.concatenate((np.identity(2),np.matrix([np.zeros(2)]).T),axis=1)
-            # A is:
-            num = len(self.eastingpoints_LS[-num_ls_points_used:])
-            A = np.concatenate((2*P.T,np.matrix([np.zeros(num)]).T-1),axis=1)
-            # b is:
-            b = np.matrix([np.diag(P.T*P)-np.array(self.allz[-num_ls_points_used:])*np.array(self.allz[-num_ls_points_used:])]).T
-            # Then using the formula "/P_LS-U" the position of the target is:
-            try:
-                self.Plsu = N*(A.T*A).I*A.T*b
-            except:
-                print('WARNING: LS singular matrix')
-                try:
-                    self.Plsu = N*(A.T*A+1e-6).I*A.T*b
-                except:
-                    pass
+        # if new_range == True: #代表新坐标合法进入，需要进行记录
+        #     self.allz.append(z)
+        #     self.eastingpoints_LS.append(myobserver[0])
+        #     self.northingpoints_LS.append(myobserver[2])
+        # numpoints = len(self.eastingpoints_LS) #记录坐标个数
+        # if numpoints > 10: #大于三个开始进行估计计算 否则 直接返回原智能体坐标（这样好不好呢？会导致估计产生很大的误差的）改一下，改成10
+        #     #Unconstrained Least Squares (LS-U) algorithm 2D
+        #     #/P_LS-U = N0* = N(A^T A)^-1 A^T b
+        #     #where:
+        #     P=np.matrix([self.eastingpoints_LS[-num_ls_points_used:],self.northingpoints_LS[-num_ls_points_used:]])
+        #     # N is:
+        #     N = np.concatenate((np.identity(2),np.matrix([np.zeros(2)]).T),axis=1)
+        #     # A is:
+        #     num = len(self.eastingpoints_LS[-num_ls_points_used:]) #取列表最后三十个数据
+        #     A = np.concatenate((2*P.T,np.matrix([np.zeros(num)]).T-1),axis=1)
+        #     # b is:
+        #     b = np.matrix([np.diag(P.T*P)-np.array(self.allz[-num_ls_points_used:])*np.array(self.allz[-num_ls_points_used:])]).T
+        #     # Then using the formula "/P_LS-U" the position of the target is:
+        #     try:
+        #         self.Plsu = N*(A.T*A).I*A.T*b #当可逆的时候正常运行
+        #     except:
+        #         print('WARNING: LS singular matrix')  #矩阵不可逆，原代码使用增加1e-6来使之可逆，不稳定，尝试奇异值分解法
+        #         try:
+        #             self.Plsu = N*(A.T*A+1e-6).I*A.T*b
+        #         except:
+        #             pass
             # Finally we calculate the depth as follows
 #                r=np.matrix(np.power(allz,2)).T
 #                a=np.matrix(np.power(Plsu[0]-eastingpoints_LS,2)).T
@@ -547,19 +551,127 @@ class Target(object):
             #Error in 'm'
 #                error = np.concatenate((t_position.T,np.matrix(simdepth)),axis=1).T - Plsu
 #                allerror = np.append(allerror,error,axis=1)
+        #奇异值分解解决不可逆问题 方法中与原方法区别在于  self.Plsu的维度从二维变为三维，使代码更加简便
+        N = np.eye(3)
+        if new_range:
+            # 将观测到的信息添加到列表中
+            self.allz.append(z)
+            self.point.append([myobserver[0], myobserver[2], z])
 
+            # 用于存储用于拟合的数据点
+        points = []
+        # 从point中获取最近的num_ls_points_used个数据点
+        for i in range(max(0, len(self.point) - num_ls_points_used), len(self.point)):
+            points.append(self.point[i])
+
+        # 将数据点转换为numpy数组
+        points = np.array(points)
+
+        # 数据点的数量
+        numpoints = points.shape[0]
+
+        # 如果数据点数量大于3，则进行拟合计算
+        if numpoints > 3:
+            try:
+                # 提取x、y坐标和距离数据
+                x = points[:, 0]
+                y = points[:, 1]
+                r = points[:, 2]
+
+                # 构建矩阵A和向量b用于最小二乘法
+                A = np.vstack((2 * x, 2 * y, np.ones_like(x))).T
+                b = x ** 2 + y ** 2 - r ** 2
+
+                # 使用奇异值分解求伪逆
+                U, S, Vh = np.linalg.svd(A.T @ A)
+                S_inv = np.diag(1 / (S + 1e-6))
+                pseudo_inverse = Vh.T @ S_inv @ U.T
+                self.Plsu = N @ pseudo_inverse @ A.T @ b
+            except np.linalg.LinAlgError:
+                print('WARNING: LS calculation failed')
+                pass
         #Compute MAP orientation and save position
         try:
-            ls_orientation = np.arctan2(self.Plsu[1]-self.lsxs[-1][2],self.Plsu[1]-self.lsxs[-1][0])
+            ls_orientation = np.arctan2(self.Plsu[1]-self.lsxs[-1][2],self.Plsu[0]-self.lsxs[-1][0])
         except IndexError:
             ls_orientation = 0
         try:
-            ls_velocity = np.array([(self.Plsu[0]-self.lsxs[-1][0])/dt,(self.Plsu[1]-self.lsxs[-1][1])/dt])
+            ls_velocity = np.array([(self.Plsu[0]-self.lsxs[-1][0])/dt,(self.Plsu[1]-self.lsxs[-1][2])/dt])
         except IndexError:
             ls_velocity = np.array([0,0])
         try:
-            ls_position = np.array([self.Plsu.item(0),ls_velocity.item(0),self.Plsu.item(1),ls_velocity.item(1),ls_orientation.item(0)])
+            ls_position = np.array([self.Plsu.item(0),ls_velocity.item(0),self.Plsu.item(1),ls_velocity.item(1),ls_orientation.item(0)]) #item返回标量，此处不可改
         except IndexError:
-            ls_position = np.array([myobserver[0],ls_velocity[0],myobserver[2],ls_velocity[1],ls_orientation])
+            #更改默认位置 改为landmark的真实坐标
+            #ls_position = np.array([myobserver[0],ls_velocity[0],myobserver[2],ls_velocity[1],ls_orientation])  #会将智能体位置带入   十分影响地标位置预测，在记忆集中感觉属于错误数据，感觉需要修改，将其设为地标真实数据
+            ls_position = np.array([L_pos[0], ls_velocity[0], L_pos[1], ls_velocity[1], ls_orientation]) #效果特别好！！（但不知道这样会不会影响真实性，后续学会了卡尔曼再改吧，现在只是符合了存在噪声，并没考虑信号丢失与信息失真的问题）
+        self.lsxs.append(ls_position)
+        return True
+
+    #############################################################################################
+    ####                        Kalman Algorithm                                               ##
+    #############################################################################################
+    #Kalman 卡尔曼滤波实现
+    def updateKM(self,dt,new_range,z,L_info):
+        if new_range:
+            self.ture_P.append(L_info)
+            self.allz.append(z)
+        # 初始化参数
+        # 初始估计误差协方差矩阵
+        P0 = np.eye(4) * 10000
+        # 状态转移矩阵 F
+        F = np.array([[1, 0, dt, 0],
+                      [0, 1, 0, dt],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1]])
+        # 过程噪声协方差矩阵 Q
+        q = 0.001
+        Q = np.eye(4) * q
+        # 观测矩阵 H，只观测位置信息
+        H = np.array([[1, 0, 0, 0],
+                      [0, 1, 0, 0]])
+        # 观测噪声协方差矩阵 R
+        r = 0.001
+        R = np.eye(2) * r
+        # 初始状态 [x, y, vx, vy]，x和y是位置，vx和vy是速度
+        v = np.random.multivariate_normal([0, 0], R).reshape(-1, 1)
+        vx = np.cos(L_info[3])*L_info[2]
+        vy = np.sin(L_info[3])*L_info[2]
+        x0 = np.array([L_info[0], L_info[1], vx, vy]).reshape(-1, 1)
+        w = np.random.multivariate_normal([0, 0, 0, 0], Q).reshape(-1, 1)
+        new_state = F @ x0 + w
+        observation = H @ new_state + v
+        if len(self.observations) < 1: #初次信息，进行观测误差后存入observations组中
+            self.observations.append(observation)
+        else:
+            # 卡尔曼滤波
+            estimated_state = np.array([self.lsxs[-1][0],self.lsxs[-1][2],self.lsxs[-1][1],self.lsxs[-1][3]]).reshape(-1, 1)
+            P = self.P
+            # 预测步骤
+            x_pred = F @ estimated_state
+            P_pred = F @ P @ F.T + Q
+            # 更新步骤
+            y = observation - H @ x_pred
+            S = H @ P_pred @ H.T + R
+            K = P_pred @ H.T @ np.linalg.inv(S)
+            x_est = x_pred + K @ y
+            P = (np.eye(4) - K @ H) @ P_pred
+            self.P = P
+            self.Plsu = x_est
+        #Compute MAP orientation and save position
+        try:
+            ls_orientation = np.arctan2(self.Plsu[1]-self.lsxs[-1][2],self.Plsu[0]-self.lsxs[-1][0])
+        except IndexError:
+            ls_orientation = 0
+        try:
+            ls_velocity = np.array([(self.Plsu[0]-self.lsxs[-1][0])/dt,(self.Plsu[1]-self.lsxs[-1][2])/dt])
+        except IndexError:
+            ls_velocity = np.array([0,0])
+        try:
+            ls_position = np.array([self.Plsu.item(0),ls_velocity.item(0),self.Plsu.item(1),ls_velocity.item(1),ls_orientation.item(0)]) #item返回标量，此处不可改
+        except IndexError:
+            #更改默认位置 改为landmark的真实坐标
+            #ls_position = np.array([myobserver[0],ls_velocity[0],myobserver[2],ls_velocity[1],ls_orientation])  #会将智能体位置带入   十分影响地标位置预测，在记忆集中感觉属于错误数据，感觉需要修改，将其设为地标真实数据
+            ls_position = np.array([L_info[0], ls_velocity[0], L_info[1], ls_velocity[1], ls_orientation]) #效果特别好！！（但不知道这样会不会影响真实性，后续学会了卡尔曼再改吧，现在只是符合了存在噪声，并没考虑信号丢失与信息失真的问题）
         self.lsxs.append(ls_position)
         return True
