@@ -1,7 +1,3 @@
-RL路径规划学习
-
-
-
 # Deep Reinforcement Learning methods for Underwater target Tracking
 <img src="https://github.com/imasmitja/RLforUTracking/blob/main/logos/RLforUTracking_logo.PNG" width="262" height="202"/>
 
